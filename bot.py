@@ -40,7 +40,8 @@ HEADERS = {
 }
 
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+# One or more chat ids, separated by commas or spaces, e.g. "12345,67890".
+CHAT_IDS = [c for c in re.split(r"[\s,]+", os.environ.get("TELEGRAM_CHAT_ID", "")) if c]
 
 TAG_RE = re.compile(r"<[^>]+>")
 WS_RE = re.compile(r"[ \t\r\f\v]+")
@@ -128,12 +129,12 @@ def build_message(entry):
 
 # --- Telegram ---------------------------------------------------------------
 
-def send(text_html, image_url):
-    """Try to send as a photo (nicer preview); fall back to a text message."""
+def _send_one(chat_id, text_html, image_url):
+    """Send a single listing to one chat. Try photo first, fall back to text."""
     if image_url:
         api = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
         payload = {
-            "chat_id": CHAT_ID,
+            "chat_id": chat_id,
             "photo": image_url,
             "caption": text_html[:1024],
             "parse_mode": "HTML",
@@ -141,25 +142,37 @@ def send(text_html, image_url):
         r = requests.post(api, data=payload, timeout=REQUEST_TIMEOUT)
         if r.status_code == 200:
             return True
-        print(f"  ! sendPhoto {r.status_code}: {r.text[:180]}", file=sys.stderr)
+        print(f"  ! sendPhoto {r.status_code} -> {chat_id}: {r.text[:180]}",
+              file=sys.stderr)
 
     api = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     payload = {
-        "chat_id": CHAT_ID,
+        "chat_id": chat_id,
         "text": text_html,
         "parse_mode": "HTML",
         "disable_web_page_preview": False,
     }
     r = requests.post(api, data=payload, timeout=REQUEST_TIMEOUT)
     if r.status_code != 200:
-        print(f"  ! sendMessage {r.status_code}: {r.text[:180]}", file=sys.stderr)
+        print(f"  ! sendMessage {r.status_code} -> {chat_id}: {r.text[:180]}",
+              file=sys.stderr)
     return r.status_code == 200
+
+
+def send(text_html, image_url):
+    """Send one listing to every configured chat id."""
+    ok = False
+    for chat_id in CHAT_IDS:
+        if _send_one(chat_id, text_html, image_url):
+            ok = True
+        time.sleep(0.1)  # small gap between recipients
+    return ok
 
 
 # --- Main -------------------------------------------------------------------
 
 def main():
-    if not TOKEN or not CHAT_ID:
+    if not TOKEN or not CHAT_IDS:
         print("ERROR: set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID", file=sys.stderr)
         sys.exit(1)
 
