@@ -1,0 +1,17 @@
+# Список страниц поиска ss.lv, за которыми следим.
+# Одна ссылка на строку. Можно вставлять обычный URL страницы —
+# скрипт сам добавит /rss/ в конце.
+# Строки, начинающиеся с #, игнорируются (можно временно отключать регион).
+
+# Фильтр /sell/ = только "Pārdod" (продаётся), без объявлений "куплю".
+# Если захочешь и аренду или "куплю" — убери /sell/ из нужной строки.
+
+# Дома / дачи (продаётся)
+https://www.ss.lv/lv/real-estate/homes-summer-residences/limbadzi-and-reg/sell/
+https://www.ss.lv/lv/real-estate/homes-summer-residences/valmiera-and-reg/sell/
+https://www.ss.lv/lv/real-estate/homes-summer-residences/cesis-and-reg/sell/
+
+# Хутора / имения (продаётся)
+https://www.ss.lv/lv/real-estate/farms-estates/limbadzi-and-reg/sell/
+https://www.ss.lv/lv/real-estate/farms-estates/valmiera-and-reg/sell/
+https://www.ss.lv/lv/real-estate/farms-estates/cesis-and-reg/sell/
