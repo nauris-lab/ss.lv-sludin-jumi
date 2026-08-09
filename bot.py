@@ -31,6 +31,7 @@ STATE_FILE = BASE_DIR / "state.json"
 MAX_SEEN = 4000          # keep only the newest N listing ids (bounds file size)
 SEND_DELAY = 0.6         # pause between Telegram messages (seconds)
 REQUEST_TIMEOUT = 30     # seconds
+MAX_PRICE_EUR = 150000   # skip listings priced above this (set 0 to disable)
 
 HEADERS = {
     "User-Agent": (
@@ -46,6 +47,7 @@ CHAT_IDS = [c for c in re.split(r"[\s,]+", os.environ.get("TELEGRAM_CHAT_ID", ""
 TAG_RE = re.compile(r"<[^>]+>")
 WS_RE = re.compile(r"[ \t\r\f\v]+")
 IMG_RE = re.compile(r'<img[^>]+src=["\']([^"\']+)["\']', re.IGNORECASE)
+PRICE_RE = re.compile(r"Cena:\s*([0-9][0-9.,\s]*)\s*(?:€|EUR)", re.IGNORECASE)
 
 
 # --- Feeds & state ----------------------------------------------------------
@@ -106,6 +108,16 @@ def clean_description(desc):
 def extract_image(desc):
     m = IMG_RE.search(desc or "")
     return m.group(1) if m else None
+
+
+def parse_price_eur(desc):
+    """Return the listing price in euros as an int, or None if not found."""
+    text = html.unescape(TAG_RE.sub(" ", desc or ""))
+    m = PRICE_RE.search(text)
+    if not m:
+        return None
+    digits = re.sub(r"[^0-9]", "", m.group(1))
+    return int(digits) if digits else None
 
 
 def build_message(entry):
@@ -183,7 +195,8 @@ def main():
     if bootstrap:
         print("First run (bootstrap): recording current listings WITHOUT sending.")
 
-    fresh = []  # list of (text_html, image_url), newest-first
+    fresh = []       # list of (text_html, image_url), newest-first
+    skipped = 0      # listings skipped because over the price limit
     for url in feeds:
         try:
             parsed = fetch_feed(url)
@@ -199,8 +212,15 @@ def main():
             seen_set.add(link)
             seen.append(link)
             new_count += 1
-            if not bootstrap:
-                fresh.append(build_message(entry))
+            if bootstrap:
+                continue
+            # Price filter: a known price above the limit is skipped.
+            # Unknown price (None) is kept, so nothing relevant is missed.
+            price = parse_price_eur(entry.get("summary") or entry.get("description") or "")
+            if MAX_PRICE_EUR and price is not None and price > MAX_PRICE_EUR:
+                skipped += 1
+                continue
+            fresh.append(build_message(entry))
         print(f"  {url} -> {len(parsed.entries)} items, {new_count} new")
 
     # Send oldest-first so notifications arrive in chronological order.
@@ -211,7 +231,8 @@ def main():
         time.sleep(SEND_DELAY)
 
     save_state(seen)
-    print(f"Done. {sent} message(s) sent, {len(seen[-MAX_SEEN:])} ids tracked.")
+    print(f"Done. {sent} message(s) sent, {skipped} over-price skipped, "
+          f"{len(seen[-MAX_SEEN:])} ids tracked.")
 
 
 if __name__ == "__main__":
