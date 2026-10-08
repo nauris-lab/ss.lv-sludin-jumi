@@ -141,30 +141,51 @@ def build_message(entry):
 
 # --- Telegram ---------------------------------------------------------------
 
+def _post(api, payload):
+    """POST to Telegram with a few retries. Returns the response, or None if
+    the network failed on every attempt (so the caller never crashes)."""
+    for attempt in range(3):
+        try:
+            r = requests.post(api, data=payload, timeout=REQUEST_TIMEOUT)
+        except requests.RequestException as e:
+            if attempt == 2:
+                print(f"  ! network error: {e}", file=sys.stderr)
+                return None
+            time.sleep(2 * (attempt + 1))
+            continue
+        # Retry on rate-limit / server errors; return anything else as-is.
+        if r.status_code == 429 or r.status_code >= 500:
+            if attempt == 2:
+                return r
+            time.sleep(2 * (attempt + 1))
+            continue
+        return r
+    return None
+
+
 def _send_one(chat_id, text_html, image_url):
     """Send a single listing to one chat. Try photo first, fall back to text."""
     if image_url:
-        api = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
-        payload = {
+        r = _post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", {
             "chat_id": chat_id,
             "photo": image_url,
             "caption": text_html[:1024],
             "parse_mode": "HTML",
-        }
-        r = requests.post(api, data=payload, timeout=REQUEST_TIMEOUT)
-        if r.status_code == 200:
+        })
+        if r is not None and r.status_code == 200:
             return True
-        print(f"  ! sendPhoto {r.status_code} -> {chat_id}: {r.text[:180]}",
-              file=sys.stderr)
+        if r is not None:
+            print(f"  ! sendPhoto {r.status_code} -> {chat_id}: {r.text[:180]}",
+                  file=sys.stderr)
 
-    api = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {
+    r = _post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", {
         "chat_id": chat_id,
         "text": text_html,
         "parse_mode": "HTML",
         "disable_web_page_preview": False,
-    }
-    r = requests.post(api, data=payload, timeout=REQUEST_TIMEOUT)
+    })
+    if r is None:
+        return False
     if r.status_code != 200:
         print(f"  ! sendMessage {r.status_code} -> {chat_id}: {r.text[:180]}",
               file=sys.stderr)
@@ -209,24 +230,31 @@ def main():
             link = entry.get("link", "").strip()
             if not link or link in seen_set:
                 continue
-            seen_set.add(link)
-            seen.append(link)
+            seen_set.add(link)   # within-run dedupe
             new_count += 1
             if bootstrap:
+                seen.append(link)
                 continue
-            # Price filter: a known price above the limit is skipped.
-            # Unknown price (None) is kept, so nothing relevant is missed.
+            # Price filter: a known price above the limit is skipped and
+            # remembered. Unknown price (None) is kept, so nothing relevant
+            # is missed.
             price = parse_price_eur(entry.get("summary") or entry.get("description") or "")
             if MAX_PRICE_EUR and price is not None and price > MAX_PRICE_EUR:
+                seen.append(link)
                 skipped += 1
                 continue
-            fresh.append(build_message(entry))
+            text_html, image_url = build_message(entry)
+            fresh.append((link, text_html, image_url))
         print(f"  {url} -> {len(parsed.entries)} items, {new_count} new")
 
     # Send oldest-first so notifications arrive in chronological order.
+    # A listing is remembered only AFTER it is sent, so a transient send
+    # failure just retries on the next run instead of being lost or
+    # crashing the job.
     sent = 0
-    for text_html, image_url in reversed(fresh):
+    for link, text_html, image_url in reversed(fresh):
         if send(text_html, image_url):
+            seen.append(link)
             sent += 1
         time.sleep(SEND_DELAY)
 
