@@ -5,6 +5,10 @@
 
 # Фильтр /sell/ = только "Pārdod" (продаётся), без объявлений "куплю".
 # Если захочешь и аренду или "куплю" — убери /sell/ из нужной строки.
+#
+# Персональный потолок цены для ленты: добавь в конце строки "| ЧИСЛО".
+# Пример: ".../sell/ | 50000" = не дороже 50 000 €.
+# Без "|" действует общий лимит из bot.py (MAX_PRICE_EUR, сейчас 150 000 €).
 
 # Дома / дачи (продаётся)
 https://www.ss.lv/lv/real-estate/homes-summer-residences/limbadzi-and-reg/sell/
@@ -25,3 +29,8 @@ https://www.ss.lv/lv/real-estate/homes-summer-residences/ogre-and-reg/sell/
 https://www.ss.lv/lv/real-estate/farms-estates/ogre-and-reg/sell/
 https://www.ss.lv/lv/real-estate/farms-estates/riga-region/saulkrasti/sell/
 https://www.ss.lv/lv/real-estate/farms-estates/riga-region/saulkrastu-l-t/sell/
+
+# Земля (продаётся) — потолок 50 000 €
+https://www.ss.lv/lv/real-estate/plots-and-lands/limbadzi-and-reg/sell/ | 50000
+https://www.ss.lv/lv/real-estate/plots-and-lands/riga-region/sell/ | 50000
+https://www.ss.lv/lv/real-estate/plots-and-lands/ogre-and-reg/sell/ | 50000

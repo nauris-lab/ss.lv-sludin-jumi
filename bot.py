@@ -53,16 +53,28 @@ PRICE_RE = re.compile(r"Cena:\s*([0-9][0-9.,\s]*)\s*(?:€|EUR)", re.IGNORECASE)
 # --- Feeds & state ----------------------------------------------------------
 
 def load_feeds():
-    """Read feeds.txt and return normalised RSS URLs (each ends with /rss/)."""
+    """Read feeds.txt and return a list of (rss_url, max_price) tuples.
+
+    Each line is an ss.lv search URL, optionally with a per-feed price cap
+    after a pipe, e.g.  "https://www.ss.lv/.../sell/ | 50000".
+    When no cap is given, max_price is None and the global MAX_PRICE_EUR is used.
+    """
     feeds = []
     for line in FEEDS_FILE.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
+        max_price = None
+        if "|" in line:
+            line, _, cap = line.partition("|")
+            line = line.strip()
+            digits = re.sub(r"[^0-9]", "", cap)
+            if digits:
+                max_price = int(digits)
         url = line.rstrip("/")
         if not url.endswith("/rss"):
             url += "/rss"
-        feeds.append(url + "/")
+        feeds.append((url + "/", max_price))
     return feeds
 
 
@@ -218,13 +230,14 @@ def main():
 
     fresh = []       # list of (text_html, image_url), newest-first
     skipped = 0      # listings skipped because over the price limit
-    for url in feeds:
+    for url, feed_max in feeds:
         try:
             parsed = fetch_feed(url)
         except Exception as e:
             print(f"  ! failed to fetch {url}: {e}", file=sys.stderr)
             continue
 
+        price_limit = feed_max if feed_max is not None else MAX_PRICE_EUR
         new_count = 0
         for entry in parsed.entries:
             link = entry.get("link", "").strip()
@@ -235,11 +248,11 @@ def main():
             if bootstrap:
                 seen.append(link)
                 continue
-            # Price filter: a known price above the limit is skipped and
-            # remembered. Unknown price (None) is kept, so nothing relevant
-            # is missed.
+            # Price filter: a known price above this feed's limit is skipped
+            # and remembered. Unknown price (None) is kept, so nothing
+            # relevant is missed.
             price = parse_price_eur(entry.get("summary") or entry.get("description") or "")
-            if MAX_PRICE_EUR and price is not None and price > MAX_PRICE_EUR:
+            if price_limit and price is not None and price > price_limit:
                 seen.append(link)
                 skipped += 1
                 continue
